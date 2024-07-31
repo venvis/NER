@@ -69,6 +69,6 @@ def read_json(file_path):
     except FileNotFoundError:
         return {}
 
-# Usage
+
 root_directory = ' ' # Replace the directory with respective directory of the cloned repo
 process_directory(root_directory)
