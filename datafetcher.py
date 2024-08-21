@@ -1,74 +1,90 @@
 import os
 import json
 import csv
+import subprocess
 
-def process_directory(root_dir):
-    for country in os.listdir(root_dir):
-        country_path = os.path.join(root_dir, country)
-        if os.path.isdir(country_path):
-            decisions_path = os.path.join(country_path, 'decisions')
-            if os.path.exists(decisions_path):
-                process_country(country, decisions_path)
 
-def process_country(country, decisions_path):
-    csv_filename = f"{country}_decisions.csv"
+repo_url = 'https://github.com/lawfulcomputing/GDPRxiv.git'
+clone_dir = 'GDPRxiv'
+script_name = 'process_files.py'
+
+
+def clone_repository(repo_url, target_dir):
+    if not os.path.exists(target_dir):
+        subprocess.run(['git', 'clone', repo_url, target_dir], check=True)
+    else:
+        print(f"Repository already exists at {target_dir}, skipping clone.")
+
+
+def get_dir():
+    current = os.getcwd()
+    countries = f"{current}/documents"
+    get_c = os.listdir(countries)
+    result_dict = {}
+    for counts in get_c:
+        country_path = f"{countries}/{counts}"
+        if any("decisions" in folder.lower() for folder in os.listdir(country_path)):
+            result_dict[counts] = os.listdir(country_path)
+    return result_dict
+
+def get_metadata():
+    fields = {}
+    dic = get_dir()
+    for country, dirs in dic.items():
+        country_data = {}
+        for dir in dirs:
+            if "decisions" in dir.lower():
+                decision_path = f"documents/{country}/{dir}"
+                for file in os.listdir(decision_path):
+                    file_path = os.path.join(decision_path, file)
+                    if os.path.isdir(file_path):
+                        en_txt_path = os.path.join(file_path, "en.txt")
+                        metadata_json_path = os.path.join(file_path, "metadata.json")
+                        
+                        if os.path.exists(en_txt_path) and os.path.exists(metadata_json_path):
+                            with open(en_txt_path, 'r', encoding='utf-8') as en_file:
+                                en_text = en_file.read()
+                            
+                            with open(metadata_json_path, 'r', encoding='utf-8') as json_file:
+                                metadata = json.load(json_file)
+                            
+                            country_data[file] = {
+                                'en_text': en_text,
+                                'metadata': metadata
+                            }
+        
+        if country_data:
+            fields[country] = country_data
     
-    with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
-        csvwriter = csv.writer(csvfile)
+    return fields
+
+def write_to_csv(data):
+    with open('output.csv', 'w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['Country', 'Decision', 'Text', 'Metadata']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         
-        # Write header
-        header = ['Decision', 'Content']
-        metadata_keys = get_metadata_keys(decisions_path)
-        header.extend(metadata_keys)
-        csvwriter.writerow(header)
-        
-        for decision in os.listdir(decisions_path):
-            decision_path = os.path.join(decisions_path, decision)
-            if os.path.isdir(decision_path):
-                content = read_file(os.path.join(decision_path, 'en.txt'))
-                metadata = read_json(os.path.join(decision_path, 'metadata.json'))
-                
-                row = [decision, content]
-                row.extend([get_metadata_value(metadata, key) for key in metadata_keys])
-                csvwriter.writerow(row)
-
-def get_metadata_keys(decisions_path):
-    keys = set()
-    for decision in os.listdir(decisions_path):
-        decision_path = os.path.join(decisions_path, decision)
-        if os.path.isdir(decision_path):
-            metadata = read_json(os.path.join(decision_path, 'metadata.json'))
-            if isinstance(metadata, list):
-                for item in metadata:
-                    if isinstance(item, dict):
-                        keys.update(item.keys())
-            elif isinstance(metadata, dict):
-                keys.update(metadata.keys())
-    return sorted(keys)
-
-def get_metadata_value(metadata, key):
-    if isinstance(metadata, list):
-        for item in metadata:
-            if isinstance(item, dict) and key in item:
-                return item[key]
-    elif isinstance(metadata, dict) and key in metadata:
-        return metadata[key]
-    return ''
-
-def read_file(file_path):
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            return file.read().strip()
-    except FileNotFoundError:
-        return ''
-
-def read_json(file_path):
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            return json.load(file)
-    except FileNotFoundError:
-        return {}
+        writer.writeheader()
+        for country, decisions in data.items():
+            for decision, content in decisions.items():
+                writer.writerow({
+                    'Country': country,
+                    'Decision': decision,
+                    'Text': content['en_text'],
+                    'Metadata': json.dumps(content['metadata']) 
+                })
 
 
-root_directory = ' ' # Replace the directory with respective directory of the cloned repo
-process_directory(root_directory)
+def main():
+    
+    clone_repository(repo_url, clone_dir)
+
+ 
+    os.chdir(clone_dir)
+    
+   
+    data = get_metadata()
+    write_to_csv(data)
+
+
+if __name__ == "__main__":
+    main()
